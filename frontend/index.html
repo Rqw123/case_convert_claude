@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自然语言测试用例信号匹配工具</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --warning: #d97706;
+    --bg: #f8fafc;
+    --card-bg: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+    color: white; padding: 18px 32px;
+    display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  header h1 { font-size: 1.25rem; font-weight: 700; }
+  header span { font-size: 0.85rem; opacity: 0.8; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+
+  .steps { display: flex; gap: 8px; margin-bottom: 28px; flex-wrap: wrap; }
+  .step-dot {
+    display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+    border-radius: 20px; font-size: 0.82rem; font-weight: 600;
+    background: var(--border); color: var(--text-muted);
+  }
+  .step-dot.active { background: var(--primary); color: white; }
+  .step-dot.done { background: #dcfce7; color: var(--success); }
+  .step-dot .num { width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center; font-size: 0.7rem; }
+
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .card-title {
+    font-size: 1rem; font-weight: 700; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px; color: var(--text);
+  }
+  .card-title .badge {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--primary);
+    color: white; display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700; flex-shrink: 0;
+  }
+
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 8px;
+    padding: 32px; text-align: center; cursor: pointer;
+    transition: all 0.2s; color: var(--text-muted);
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+  .upload-zone input { display: none; }
+  .upload-zone .icon { font-size: 2rem; margin-bottom: 8px; }
+  .upload-zone .hint { font-size: 0.8rem; margin-top: 6px; }
+
+  .uploaded-info {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; background: #f0fdf4; border: 1px solid #bbf7d0;
+    border-radius: 8px; margin-top: 12px;
+  }
+  .uploaded-info .file-name { font-weight: 600; color: var(--success); }
+  .uploaded-info .file-meta { font-size: 0.8rem; color: var(--text-muted); }
+  .uploaded-info .reupload { margin-left: auto; cursor: pointer; color: var(--text-muted); font-size: 0.8rem; text-decoration: underline; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
+  .summary-stat { background: #f1f5f9; border-radius: 8px; padding: 12px; text-align: center; }
+  .summary-stat .val { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+  .summary-stat .lbl { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+  .form-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 200px; }
+  label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+  input, select {
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 0.9rem; outline: none; transition: border 0.15s;
+  }
+  input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px #dbeafe; }
+  input[type=number] { width: 100px; }
+
+  .btn {
+    padding: 10px 22px; border: none; border-radius: 7px; cursor: pointer;
+    font-size: 0.9rem; font-weight: 600; transition: all 0.15s;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-success { background: var(--success); color: white; }
+  .btn-success:hover:not(:disabled) { background: #15803d; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { background: var(--bg); }
+
+  .alert {
+    padding: 12px 16px; border-radius: 8px; margin-bottom: 12px;
+    font-size: 0.88rem; display: flex; align-items: flex-start; gap: 10px;
+  }
+  .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: var(--danger); }
+  .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: var(--success); }
+  .alert-info { background: #eff6ff; border: 1px solid #bfdbfe; color: var(--primary); }
+
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white; border-radius: 50%;
+    animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { background: #f1f5f9; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #f8fafc; }
+  .status-ok { color: var(--success); font-weight: 600; }
+  .status-fail { color: var(--danger); font-weight: 600; }
+  .info-str { font-family: monospace; font-size: 0.8rem; background: #f1f5f9; padding: 3px 6px; border-radius: 4px; }
+
+  .progress-bar-wrap { background: var(--border); border-radius: 99px; height: 8px; margin: 12px 0; overflow: hidden; }
+  .progress-bar { height: 100%; background: var(--primary); border-radius: 99px; transition: width 0.3s; }
+
+  .preview-table-wrap { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 12px; }
+  .result-table-wrap { max-height: 480px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 12px; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .tag-blue { background: #dbeafe; color: #1d4ed8; }
+  .tag-green { background: #dcfce7; color: #15803d; }
+  .tag-red { background: #fee2e2; color: #dc2626; }
+
+  .hidden { display: none !important; }
+  .mt-8 { margin-top: 8px; }
+  .mt-16 { margin-top: 16px; }
+  .flex { display: flex; }
+  .gap-8 { gap: 8px; }
+  .items-center { align-items: center; }
+
+  /* Collapsible reason */
+  .reason-text { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="font-size:1.8rem">🚗</div>
+  <div>
+    <h1>自然语言测试用例信号匹配工具</h1>
+    <span>上传 DBC / Excel 信号矩阵 + 测试用例 → DeepSeek 语义匹配 → 回填导出</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Step indicators -->
+  <div class="steps" id="stepIndicators">
+    <div class="step-dot active" id="step1dot"><span class="num">1</span>上传信号文件</div>
+    <div style="align-self:center;color:#94a3b8">›</div>
+    <div class="step-dot" id="step2dot"><span class="num">2</span>上传测试用例</div>
+    <div style="align-self:center;color:#94a3b8">›</div>
+    <div class="step-dot" id="step3dot"><span class="num">3</span>配置并执行匹配</div>
+    <div style="align-self:center;color:#94a3b8">›</div>
+    <div class="step-dot" id="step4dot"><span class="num">4</span>查看并导出结果</div>
+  </div>
+
+  <!-- Global error -->
+  <div id="globalError" class="alert alert-error hidden"></div>
+
+  <!-- ── CARD 1: Signal Upload ─────────────────────────────────────────── -->
+  <div class="card" id="card1">
+    <div class="card-title"><span class="badge">1</span>上传信号源文件</div>
+    <div class="upload-zone" id="signalDropZone" onclick="document.getElementById('signalFileInput').click()">
+      <input type="file" id="signalFileInput" accept=".dbc,.xls,.xlsx,.xlsm" onclick="this.value=''">
+      <div class="icon">📡</div>
+      <div>点击或拖拽上传 DBC / Excel 信号矩阵文件</div>
+      <div class="hint">支持 .dbc · .xls · .xlsx · .xlsm</div>
+    </div>
+    <div id="signalUploadedInfo" class="hidden"></div>
+    <div id="signalSummary" class="hidden">
+      <div class="summary-grid" id="signalSummaryGrid"></div>
+      <div class="preview-table-wrap mt-8" id="signalPreviewWrap"></div>
+    </div>
+    <div id="signalError" class="alert alert-error mt-8 hidden"></div>
+    <div class="mt-16">
+      <button class="btn btn-primary" id="parseSignalBtn" onclick="parseSignalFile()" disabled>
+        <span class="spinner hidden" id="signalSpinner"></span>解析信号文件
+      </button>
+    </div>
+  </div>
+
+  <!-- ── CARD 2: Case Upload ───────────────────────────────────────────── -->
+  <div class="card hidden" id="card2">
+    <div class="card-title"><span class="badge">2</span>上传测试用例文件</div>
+    <div class="upload-zone" id="caseDropZone" onclick="document.getElementById('caseFileInput').click()">
+      <input type="file" id="caseFileInput" accept=".xls,.xlsx,.xlsm" onclick="this.value=''">`
+      <div class="icon">📋</div>
+      <div>点击或拖拽上传测试用例 Excel 文件</div>
+      <div class="hint">支持 .xls · .xlsx · .xlsm</div>
+    </div>
+    <div id="caseUploadedInfo" class="hidden"></div>
+    <div id="caseSummary" class="hidden">
+      <div class="summary-grid" id="caseSummaryGrid"></div>
+      <div class="preview-table-wrap mt-8" id="casePreviewWrap"></div>
+    </div>
+    <div id="caseError" class="alert alert-error mt-8 hidden"></div>
+    <div class="mt-16">
+      <button class="btn btn-primary" id="parseCaseBtn" onclick="parseCaseFile()" disabled>
+        <span class="spinner hidden" id="caseSpinner"></span>解析用例文件
+      </button>
+    </div>
+  </div>
+
+  <!-- ── CARD 3: Model Config & Run ───────────────────────────────────── -->
+  <div class="card hidden" id="card3">
+    <div class="card-title"><span class="badge">3</span>配置 DeepSeek 参数并执行匹配</div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>API Base URL</label>
+        <input type="text" id="baseUrl" value="https://api.deepseek.com">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label>Model</label>
+        <input type="text" id="modelName" value="deepseek-chat">
+      </div>
+      <div class="form-group" style="flex:0">
+        <label>Temperature</label>
+        <input type="number" id="temperature" value="0" min="0" max="2" step="0.1">
+      </div>
+    </div>
+    <div id="matchError" class="alert alert-error mt-8 hidden"></div>
+    <div class="mt-16 flex gap-8 items-center">
+      <button class="btn btn-primary" id="runMatchBtn" onclick="runMatch()">
+        <span class="spinner hidden" id="matchSpinner"></span>▶ 开始执行匹配
+      </button>
+      <span id="matchStatus" style="font-size:0.85rem;color:var(--text-muted)"></span>
+    </div>
+    <div class="progress-bar-wrap hidden" id="matchProgress">
+      <div class="progress-bar" id="matchProgressBar" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- ── CARD 4: Results ──────────────────────────────────────────────── -->
+  <div class="card hidden" id="card4">
+    <div class="card-title"><span class="badge">4</span>匹配结果</div>
+    <div class="summary-grid" id="resultSummaryGrid"></div>
+    <div id="resultError" class="alert alert-error mt-8 hidden"></div>
+    <div class="result-table-wrap mt-8" id="resultTableWrap"></div>
+    <div class="mt-16 flex gap-8 items-center">
+      <button class="btn btn-success" id="exportBtn" onclick="exportResult()">
+        <span class="spinner hidden" id="exportSpinner"></span>⬇ 导出回填 Excel
+      </button>
+      <button class="btn btn-outline" onclick="resetAll()">🔄 重新开始</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = '';  // same origin
+
+let state = {
+  signalFile: null,
+  caseFile: null,
+  signalSessionId: null,
+  caseSessionId: null,
+  taskId: null,
+  matchResults: null,
+};
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+
+function show(id) { document.getElementById(id)?.classList.remove('hidden'); }
+function hide(id) { document.getElementById(id)?.classList.add('hidden'); }
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = '⚠ ' + msg; el.classList.remove('hidden'); }
+}
+function clearError(id) { document.getElementById(id)?.classList.add('hidden'); }
+function setStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const dot = document.getElementById(`step${i}dot`);
+    dot.classList.remove('active','done');
+    if (i < n) dot.classList.add('done');
+    else if (i === n) dot.classList.add('active');
+  }
+}
+function spinner(id, show) {
+  document.getElementById(id)?.classList.toggle('hidden', !show);
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+// ── File drag & drop ─────────────────────────────────────────────────────────
+
+function setupDrop(zoneId, inputId) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  if (!zone || !input) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) { input.files = e.dataTransfer.files; handleFileSelected(inputId); }
+  });
+  input.addEventListener('change', () => handleFileSelected(inputId));
+}
+
+function handleFileSelected(inputId) {
+  const isSignal = inputId === 'signalFileInput';
+  const input = document.getElementById(inputId);
+  const file = input.files[0];
+  if (!file) return;
+  if (isSignal) {
+    state.signalFile = file;
+    document.getElementById('parseSignalBtn').disabled = false;
+    clearError('signalError');
+    hide('signalSummary');
+    const info = document.getElementById('signalUploadedInfo');
+    info.innerHTML = `<div style="font-size:1.5rem">📁</div><div><div class="file-name">${file.name}</div><div class="file-meta">${formatBytes(file.size)}</div></div><span class="reupload" onclick="resetSignalFile()">✕ 重新选择</span>`;
+    info.classList.remove('hidden');
+  } else {
+    state.caseFile = file;
+    document.getElementById('parseCaseBtn').disabled = false;
+    clearError('caseError');
+    hide('caseSummary');
+    const info = document.getElementById('caseUploadedInfo');
+    info.innerHTML = `<div style="font-size:1.5rem">📁</div><div><div class="file-name">${file.name}</div><div class="file-meta">${formatBytes(file.size)}</div></div><span class="reupload" onclick="resetCaseFile()">✕ 重新选择</span>`;
+    info.classList.remove('hidden');
+  }
+}
+
+// ── Parse signal file ────────────────────────────────────────────────────────
+
+async function parseSignalFile() {
+  if (!state.signalFile) return;
+  clearError('signalError');
+  spinner('signalSpinner', true);
+  document.getElementById('parseSignalBtn').disabled = true;
+
+  const fd = new FormData();
+  fd.append('file', state.signalFile);
+
+  try {
+    const res = await fetch(`${API}/api/signals/parse`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '解析失败');
+
+    state.signalSessionId = data.signal_session_id;
+
+    // Uploaded info
+    const info = document.getElementById('signalUploadedInfo');
+    info.innerHTML = `
+      <div style="font-size:1.5rem">✅</div>
+      <div>
+        <div class="file-name">📁 ${state.signalFile.name}</div>
+        <div class="file-meta">${formatBytes(state.signalFile.size)} · ${data.source_type.toUpperCase()}</div>
+      </div>`;
+    info.classList.remove('hidden');
+
+    // Summary stats
+    const grid = document.getElementById('signalSummaryGrid');
+    grid.innerHTML = `
+      <div class="summary-stat"><div class="val">${data.message_count}</div><div class="lbl">报文数量</div></div>
+      <div class="summary-stat"><div class="val">${data.signal_count}</div><div class="lbl">信号数量</div></div>
+      <div class="summary-stat"><div class="val">${data.source_type.toUpperCase()}</div><div class="lbl">文件类型</div></div>
+    `;
+
+    // Preview table
+    const preview = data.signals_preview || [];
+    const previewWrap = document.getElementById('signalPreviewWrap');
+    previewWrap.innerHTML = buildTable(
+      ['报文ID', '信号名', '信号描述'],
+      preview.map(s => [s.msg_id || '—', s.signal_name, s.signal_desc || '—'])
+    );
+    show('signalSummary');
+    show('card2');
+    setStep(2);
+
+  } catch (e) {
+    showError('signalError', e.message);
+    document.getElementById('parseSignalBtn').disabled = false;
+  } finally {
+    spinner('signalSpinner', false);
+  }
+}
+
+// ── Parse case file ──────────────────────────────────────────────────────────
+
+async function parseCaseFile() {
+  if (!state.caseFile) return;
+  clearError('caseError');
+  spinner('caseSpinner', true);
+  document.getElementById('parseCaseBtn').disabled = true;
+
+  const fd = new FormData();
+  fd.append('file', state.caseFile);
+
+  try {
+    const res = await fetch(`${API}/api/cases/parse`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '解析失败');
+
+    state.caseSessionId = data.case_session_id;
+
+    const info = document.getElementById('caseUploadedInfo');
+    info.innerHTML = `
+      <div style="font-size:1.5rem">✅</div>
+      <div>
+        <div class="file-name">📁 ${state.caseFile.name}</div>
+        <div class="file-meta">${formatBytes(state.caseFile.size)}</div>
+      </div>`;
+    info.classList.remove('hidden');
+
+    const grid = document.getElementById('caseSummaryGrid');
+    grid.innerHTML = `
+      <div class="summary-stat"><div class="val">${data.case_count}</div><div class="lbl">用例数量</div></div>
+      <div class="summary-stat"><div class="val">${(data.sheet_names||[]).length||1}</div><div class="lbl">工作表数</div></div>
+    `;
+
+    const preview = data.cases_preview || [];
+    const previewWrap = document.getElementById('casePreviewWrap');
+    previewWrap.innerHTML = buildTable(
+      ['行号', '用例ID', '测试步骤'],
+      preview.map(c => [c.row_index, c.case_id, c.case_step])
+    );
+    show('caseSummary');
+    show('card3');
+    setStep(3);
+
+  } catch (e) {
+    showError('caseError', e.message);
+    document.getElementById('parseCaseBtn').disabled = false;
+  } finally {
+    spinner('caseSpinner', false);
+  }
+}
+
+// ── Run match ────────────────────────────────────────────────────────────────
+
+async function runMatch() {
+  if (!state.signalSessionId || !state.caseSessionId) {
+    showError('matchError', '请先完成信号文件和测试用例文件的上传解析');
+    return;
+  }
+  clearError('matchError');
+  spinner('matchSpinner', true);
+  document.getElementById('runMatchBtn').disabled = true;
+  document.getElementById('matchStatus').textContent = '正在执行匹配，请稍候…';
+  show('matchProgress');
+
+  // Animate progress bar
+  let prog = 5;
+  const progBar = document.getElementById('matchProgressBar');
+  progBar.style.width = prog + '%';
+  const progInterval = setInterval(() => {
+    prog = Math.min(prog + Math.random() * 3, 90);
+    progBar.style.width = prog + '%';
+  }, 800);
+
+  const body = {
+    signal_session_id: state.signalSessionId,
+    case_session_id: state.caseSessionId,
+    model_config: {
+      base_url: document.getElementById('baseUrl').value,
+      model: document.getElementById('modelName').value,
+      temperature: parseFloat(document.getElementById('temperature').value) || 0,
+    }
+  };
+
+  try {
+    const res = await fetch(`${API}/api/match/run`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '匹配失败');
+
+    state.taskId = data.task_id;
+    state.matchResults = data.results;
+
+    clearInterval(progInterval);
+    progBar.style.width = '100%';
+    setTimeout(() => hide('matchProgress'), 600);
+
+    showResults(data);
+    show('card4');
+    setStep(4);
+
+  } catch (e) {
+    clearInterval(progInterval);
+    hide('matchProgress');
+    showError('matchError', e.message);
+    document.getElementById('runMatchBtn').disabled = false;
+    document.getElementById('matchStatus').textContent = '';
+  } finally {
+    spinner('matchSpinner', false);
+  }
+}
+
+// ── Show results ─────────────────────────────────────────────────────────────
+
+function showResults(data) {
+  const grid = document.getElementById('resultSummaryGrid');
+  const rate = data.total > 0 ? Math.round(data.matched_count / data.total * 100) : 0;
+  grid.innerHTML = `
+    <div class="summary-stat"><div class="val">${data.total}</div><div class="lbl">用例总数</div></div>
+    <div class="summary-stat"><div class="val" style="color:var(--success)">${data.matched_count}</div><div class="lbl">匹配成功</div></div>
+    <div class="summary-stat"><div class="val" style="color:var(--danger)">${data.unmatched_count}</div><div class="lbl">未匹配</div></div>
+    <div class="summary-stat"><div class="val">${rate}%</div><div class="lbl">匹配率</div></div>
+    <div class="summary-stat"><div class="val tag tag-blue">${data.task_id}</div><div class="lbl">任务ID</div></div>
+  `;
+
+  const rows = (data.results || []).map(r => {
+    const status = r.matched
+      ? `<span class="status-ok">✅ 成功</span>`
+      : `<span class="status-fail">❌ 失败</span>`;
+    const infoStr = (r.case_info || []).map(c => `<span class="info-str">${c.info_str || `[${c.signal_name}]`}</span>`).join('<br>');
+    const reason = r.unmatched_reason ? `<div class="reason-text">${r.unmatched_reason}</div>` : '';
+    return `<tr>
+      <td>${r.case_id}</td>
+      <td>${r.case_step}</td>
+      <td>${status}</td>
+      <td>${infoStr || '—'}</td>
+      <td>${reason}</td>
+    </tr>`;
+  });
+
+  document.getElementById('resultTableWrap').innerHTML = `
+    <table>
+      <thead><tr><th>用例ID</th><th>测试步骤</th><th>状态</th><th>匹配信号汇总</th><th>未匹配原因</th></tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>`;
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+
+async function exportResult() {
+  if (!state.taskId || !state.caseSessionId) {
+    showError('resultError', '缺少任务信息，请重新执行匹配');
+    return;
+  }
+  clearError('resultError');
+  spinner('exportSpinner', true);
+  document.getElementById('exportBtn').disabled = true;
+
+  try {
+    const res = await fetch(`${API}/api/export/fill`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ task_id: state.taskId, case_session_id: state.caseSessionId }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || '导出失败');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${state.taskId}_filled.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showError('resultError', e.message);
+  } finally {
+    spinner('exportSpinner', false);
+    document.getElementById('exportBtn').disabled = false;
+  }
+}
+
+// ── Reset single file ────────────────────────────────────────────────────────
+
+function resetSignalFile() {
+  state.signalFile = null;
+  state.signalSessionId = null;
+  document.getElementById('signalFileInput').value = '';
+  document.getElementById('parseSignalBtn').disabled = true;
+  hide('signalUploadedInfo');
+  hide('signalSummary');
+  clearError('signalError');
+}
+
+function resetCaseFile() {
+  state.caseFile = null;
+  state.caseSessionId = null;
+  document.getElementById('caseFileInput').value = '';
+  document.getElementById('parseCaseBtn').disabled = true;
+  hide('caseUploadedInfo');
+  hide('caseSummary');
+  clearError('caseError');
+}
+
+// ── Reset ────────────────────────────────────────────────────────────────────
+
+function resetAll() {
+  state = { signalFile: null, caseFile: null, signalSessionId: null, caseSessionId: null, taskId: null, matchResults: null };
+  ['card2','card3','card4','signalSummary','signalUploadedInfo','caseSummary','caseUploadedInfo','matchProgress'].forEach(hide);
+  ['signalError','caseError','matchError','resultError','globalError'].forEach(clearError);
+  document.getElementById('parseSignalBtn').disabled = true;
+  document.getElementById('parseCaseBtn').disabled = true;
+  document.getElementById('signalFileInput').value = '';
+  document.getElementById('caseFileInput').value = '';
+  document.getElementById('matchStatus').textContent = '';
+  setStep(1);
+}
+
+// ── Table builder ────────────────────────────────────────────────────────────
+
+function buildTable(headers, rows) {
+  const ths = headers.map(h => `<th>${h}</th>`).join('');
+  const trs = rows.map(r => `<tr>${r.map(c => `<td>${c ?? '—'}</td>`).join('')}</tr>`).join('');
+  return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+setupDrop('signalDropZone', 'signalFileInput');
+setupDrop('caseDropZone', 'caseFileInput');
+</script>
+</body>
+</html>
