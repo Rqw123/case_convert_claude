@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder=None)
+app.config["JSON_ENSURE_ASCII"] = False
 
 # ─────────────────────────────────────────────────────────────────────────────
 # In-memory session store
@@ -167,8 +168,15 @@ class _DBCParser:
         self._parse(dbc_file)
 
     def _parse(self, dbc_file: str):
-        with open(dbc_file, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
+        raw = open(dbc_file, "rb").read()
+        for enc in ("utf-8-sig", "gbk", "gb2312", "utf-8", "latin-1"):
+            try:
+                content = raw.decode(enc)
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+        else:
+            content = raw.decode("utf-8", errors="replace")
         content = content.replace("\r\n", "\n").replace("\r", "\n")
 
         val_map: Dict[str, Dict[str, Dict[str, str]]] = {}
@@ -463,7 +471,262 @@ def normalize_case(text: str) -> Dict:
 # Signal Recall
 # ─────────────────────────────────────────────────────────────────────────────
 _MIN_KW_LEN = 2
-_TOP_N = 15
+_TOP_N = 25
+
+# 汽车域信号名英文缩写/单词 → 中文语义（用于中文用例匹配英文信号名）
+_EN2ZH: Dict[str, List[str]] = {
+    # 位置/角色
+    "drvr": ["主驾","驾驶","左前","驾驶员"],
+    "drv":  ["主驾","驾驶","左前"],
+    "pass": ["副驾","乘客","右前","前排右"],
+    "pasgr":["副驾","乘客","右前"],
+    "le":   ["左","左侧"],
+    "ri":   ["右","右侧"],
+    "re":   ["后排","后"],
+    "frnt": ["前","前排"],
+    "fr":   ["前","前排"],
+    "rear": ["后","后排"],
+    "lf":   ["左前"],
+    "rf":   ["右前"],
+    "lr":   ["左后","后左"],
+    "rr":   ["右后","后右"],
+    "left": ["左","左侧"],
+    "right":["右","右侧"],
+    "front":["前","前排"],
+    "all":  ["全部","所有","整车"],
+    # 功能
+    "heat": ["加热","暖风","座椅加热"],
+    "vent": ["通风","座椅通风"],
+    "wind": ["通风","座椅通风"],
+    "massg":["按摩","座椅按摩"],
+    "massage":["按摩","座椅按摩"],
+    "lck":  ["锁","锁止","车门锁"],
+    "lock": ["锁","锁止","车门锁"],
+    "unlk": ["解锁","开锁"],
+    "door": ["车门","门"],
+    "win":  ["车窗","窗"],
+    "wdw":  ["车窗","窗"],
+    "window":["车窗","窗"],
+    "wiper":["雨刮","雨刮器"],
+    "wipr": ["雨刮","雨刮器"],
+    "lamp": ["灯","车灯"],
+    "light":["灯","车灯","灯光"],
+    "beam": ["远光","灯"],
+    "hi":   ["远光","高"],
+    "lo":   ["近光","低"],
+    "turn": ["转向","转向灯"],
+    "horn": ["喇叭","鸣笛"],
+    "seat": ["座椅"],
+    "steer":["方向盘","转向"],
+    "swh":  ["方向盘"],
+    "wheel":["车轮","方向盘"],
+    "trunk":["后备箱","行李箱"],
+    "hood": ["前机盖","发动机盖"],
+    "sunrf":["天窗"],
+    "sunroof":["天窗"],
+    "mirr": ["后视镜","反光镜"],
+    "mirror":["后视镜","反光镜"],
+    "spd":  ["速度","车速"],
+    "veh":  ["车辆","整车"],
+    "chrg": ["充电"],
+    "charge":["充电"],
+    "ac":   ["空调"],
+    "hvac": ["空调","暖通"],
+    "fan":  ["风扇","鼓风机"],
+    "temp": ["温度"],
+    "pwr":  ["电源","功率"],
+    "power":["电源","功率"],
+    "eng":  ["发动机","引擎"],
+    "mot":  ["电机","马达"],
+    "brk":  ["制动","刹车"],
+    "brake":["制动","刹车"],
+    "park": ["驻车","停车"],
+    "epb":  ["电子手刹","驻车制动"],
+    "abs":  ["制动","防抱死"],
+    "esp":  ["车身稳定","ESP"],
+    "acc":  ["自适应巡航","ACC"],
+    "lka":  ["车道保持"],
+    "ldc":  ["车道偏离"],
+    "fcw":  ["碰撞预警"],
+    "aeb":  ["自动紧急制动"],
+    "mem":  ["记忆","存储"],
+    "info": ["信息"],
+    "save": ["保存","存储","记忆"],
+    "call": ["调用","召回"],
+    "set":  ["设置","设定"],
+    "sts":  ["状态"],
+    "status":["状态"],
+    "req":  ["请求","需求"],
+    "fb":   ["反馈","回报"],
+    "ctrl": ["控制"],
+    "en":   ["使能","启用"],
+    "dis":  ["禁用","关闭"],
+    "on":   ["打开","开启","开"],
+    "off":  ["关闭","关断","关"],
+    "act":  ["激活","动作"],
+    "inact":["未激活","关闭"],
+    "fld":  ["折叠"],
+    "fold": ["折叠"],
+    "slide":["滑动","前后调节"],
+    "hight":["高度"],
+    "height":["高度"],
+    "tilt": ["倾斜","靠背"],
+    "recl": ["靠背","后仰"],
+    "lumb": ["腰部","腰托"],
+    "head": ["头枕"],
+    "warn": ["警告","报警"],
+    "alert":["警报","报警"],
+    "err":  ["错误","故障"],
+    "fault":["故障"],
+    "batt": ["电池","蓄电池"],
+    "vol":  ["电压","音量"],
+    "curr": ["电流"],
+    "soc":  ["电量","荷电状态"],
+    "child":["儿童","童锁"],
+    "safe": ["安全"],
+    "srs":  ["安全气囊","SRS"],
+    "airbag":["气囊","安全气囊"],
+    "belt": ["安全带"],
+    "buc":  ["安全带","扣合"],
+    "occpn":["占用","乘员"],
+    "crash":["碰撞"],
+    "bcm":  ["车身控制","BCM"],
+    "bdc":  ["车身控制"],
+    "cdc":  ["座舱控制","CDC"],
+    "vcu":  ["整车控制","VCU"],
+    "mcu":  ["电机控制","MCU"],
+    "bcu":  ["电池控制","BCU"],
+    "dsm":  ["驾驶座椅模块","DSM"],
+    "pdsm": ["副驾座椅模块"],
+    "rdsm": ["后排座椅模块"],
+    "tms":  ["热管理","TMS"],
+    "network":["网络"],
+    "remote":["远程","遥控"],
+    "mode": ["模式"],
+    "level":["等级","档位"],
+    "max":  ["最大","最高"],
+    "min":  ["最小","最低"],
+    "antipin":["防夹"],
+    "anti": ["防"],
+    "pinch":["防夹"],
+}
+
+# 中文关键词 → 英文信号名词片段（用于从中文用例检索英文信号名）
+_ZH2EN: Dict[str, List[str]] = {
+    "主驾":   ["Drvr","Drv","Driver","Dr","Le","Lf"],
+    "驾驶员": ["Drvr","Drv","Driver"],
+    "副驾":   ["Pass","Pasgr","Passenger","Ri","Rf"],
+    "乘客":   ["Pass","Pasgr","Passenger"],
+    "左前":   ["Le","Lf","FrLe","FrntLe","Left","Drvr"],
+    "右前":   ["Ri","Rf","FrRi","FrntRi","Right","Pass"],
+    "左后":   ["ReLe","ReLe","RearLe","Lr"],
+    "右后":   ["ReRi","ReRi","RearRi","Rr"],
+    "前排":   ["Fr","Frnt","Front","Fr"],
+    "后排":   ["Re","Rear","Rr"],
+    "全部":   ["All"],
+    "所有":   ["All"],
+    "整车":   ["All","Veh"],
+    "加热":   ["Heat"],
+    "座椅加热":["Heat","SeatHeat"],
+    "通风":   ["Wind","Vent"],
+    "座椅通风":["Wind","Vent","SeatWind"],
+    "按摩":   ["Massg","Massage"],
+    "座椅按摩":["Massg","Massage","SeatMassg"],
+    "座椅":   ["Seat"],
+    "车门":   ["Door"],
+    "车窗":   ["Win","Wdw","Window"],
+    "车锁":   ["Lck","Lock"],
+    "锁":     ["Lck","Lock"],
+    "解锁":   ["Unlk","Unlock"],
+    "雨刮":   ["Wipr","Wiper"],
+    "天窗":   ["Sunrf","Sunroof"],
+    "后备箱": ["Trunk"],
+    "后视镜": ["Mirr","Mirror"],
+    "方向盘": ["Swh","Steer","Wheel"],
+    "转向灯": ["Turn"],
+    "远光":   ["Hi","HighBeam","Beam"],
+    "近光":   ["Lo","LowBeam"],
+    "灯":     ["Lamp","Light"],
+    "喇叭":   ["Horn"],
+    "空调":   ["Ac","Hvac"],
+    "充电":   ["Chrg","Charge"],
+    "速度":   ["Spd","Speed"],
+    "车速":   ["Spd","VehSpd"],
+    "温度":   ["Temp"],
+    "记忆":   ["Mem","Save","Info"],
+    "保存":   ["Save","Mem"],
+    "调用":   ["Call"],
+    "折叠":   ["Fld","Fold"],
+    "腰部":   ["Lumb"],
+    "头枕":   ["Head"],
+    "靠背":   ["Recl","Tilt"],
+    "高度":   ["Hight","Height"],
+    "安全带": ["Belt","Buc"],
+    "安全气囊":["Srs","Airbag"],
+    "防夹":   ["AntiPin","AntiPinch","Antipin"],
+    "打开":   ["On","Open","Act","En"],
+    "开启":   ["On","Open","Act","En"],
+    "关闭":   ["Off","Close","Dis","Inact"],
+    "设置":   ["Set"],
+    "状态":   ["Sts","Status","St"],
+    "请求":   ["Req"],
+    "反馈":   ["Fb"],
+    "控制":   ["Ctrl"],
+    "模式":   ["Mode","Mod"],
+    "等级":   ["Level"],
+    "档位":   ["Level"],
+    "制动":   ["Brk","Brake"],
+    "刹车":   ["Brk","Brake"],
+    "驻车":   ["Park","Epb"],
+    "手刹":   ["Epb","Park"],
+    "电机":   ["Mot"],
+    "电池":   ["Batt"],
+    "电量":   ["Soc"],
+    "故障":   ["Fault","Err"],
+    "报警":   ["Warn","Alert"],
+    "儿童":   ["Child"],
+    "童锁":   ["Child","ChildSafe"],
+    "碰撞":   ["Crash","Fcw","Aeb"],
+}
+
+def _split_camel(name: str) -> List[str]:
+    """拆解 CamelCase 信号名为词片段列表"""
+    parts = re.findall(r'[A-Z][a-z0-9]*', name)
+    return parts
+
+def _signal_semantic_tags(sig_name: str) -> List[str]:
+    """将信号名 CamelCase 拆分后，映射为中文语义标签"""
+    parts = _split_camel(sig_name)
+    tags = []
+    for p in parts:
+        pl = p.lower()
+        if pl in _EN2ZH:
+            tags.extend(_EN2ZH[pl])
+    return list(dict.fromkeys(tags))
+
+def _signal_searchable(sig: Dict) -> str:
+    """构建信号的可搜索文本，包含信号名、CamelCase拆分词、中文语义标签、枚举值"""
+    name = sig.get("signal_name", "")
+    parts = _split_camel(name)
+    tags = _signal_semantic_tags(name)
+    desc = sig.get("signal_desc", "") or ""
+    # 如果 signal_desc 含乱码（非ASCII且乱码字符占比高），忽略它
+    if desc:
+        printable = sum(1 for c in desc if ord(c) > 0x4e00 or c.isascii())
+        if printable / max(len(desc), 1) < 0.3:
+            desc = ""
+    values_str = " ".join(v for v in sig.get("values", {}).values() if v and v.isascii())
+    values_keys = " ".join(sig.get("values", {}).keys())
+    msg_name = sig.get("message_name", "") or ""
+    return " ".join(filter(None, [
+        name,
+        " ".join(parts),
+        " ".join(tags),
+        desc,
+        values_str,
+        values_keys,
+        msg_name,
+    ])).lower()
 
 def _tokenize(text: str) -> List[str]:
     text = re.sub(r"[^\u4e00-\u9fa5a-zA-Z0-9_]", " ", text)
@@ -491,71 +754,108 @@ def _expand_kw(text: str, sem: Dict) -> List[str]:
     if "__MIN__" in ev.values(): kws.update(["Min","Low","Level1","最低","最小"])
     for k in ev:
         kws.update(re.findall(r"\d+", k))
+    # 中文词 → 英文信号名片段扩展（核心：让中文用例能匹配英文信号名）
+    all_text = text + " " + " ".join(sem.get("expanded_steps", []))
+    for zh, en_list in _ZH2EN.items():
+        if zh in all_text:
+            kws.update(en_list)
+            kws.update([e.lower() for e in en_list])
     return [kw for kw in kws if len(str(kw)) >= _MIN_KW_LEN]
 
 def recall_candidates(case_step: str, flat_signals: List[Dict], sem: Dict) -> List[Dict]:
     kws = _expand_kw(case_step, sem)
+    kws_lower = [str(kw).lower() for kw in kws if len(str(kw)) >= _MIN_KW_LEN]
     scored = []
     for sig in flat_signals:
-        searchable = " ".join(filter(None,[
-            sig.get("signal_name",""), sig.get("signal_desc",""),
-            sig.get("comment",""), sig.get("message_name",""),
-            json.dumps(sig.get("values",{}), ensure_ascii=False),
-        ])).lower()
+        searchable = _signal_searchable(sig)
+        sig_name_lower = sig.get("signal_name", "").lower()
+        sig_parts_lower = " ".join(_split_camel(sig.get("signal_name",""))).lower()
+        sig_tags = " ".join(_signal_semantic_tags(sig.get("signal_name",""))).lower()
         score = 0.0
         hits = []
-        for kw in kws:
-            kl = str(kw).lower()
-            if kl in searchable:
-                w = 3.0 if kl in (sig.get("signal_name","") + sig.get("signal_desc","")).lower() else 1.0
-                score += w
-                hits.append(kw)
+        for kl in kws_lower:
+            if kl not in searchable:
+                continue
+            # 权重分级：信号名直接命中 > 信号名CamelCase片段命中 > 语义标签命中 > 其他
+            if kl in sig_name_lower:
+                w = 5.0
+            elif kl in sig_parts_lower:
+                w = 4.0
+            elif kl in sig_tags:
+                w = 3.0
+            else:
+                w = 1.0
+            score += w
+            hits.append(kl)
         if score > 0:
-            scored.append({**sig, "score": round(score,2), "hit_reasons": hits[:10]})
+            scored.append({**sig, "score": round(score,2), "hit_reasons": list(dict.fromkeys(hits))[:15]})
     scored.sort(key=lambda x: -x["score"])
     return scored[:_TOP_N]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Prompt Builder
 # ─────────────────────────────────────────────────────────────────────────────
-_SYSTEM_PROMPT = """你是一个车控信号语义匹配专家。根据测试用例描述，在候选信号列表中找出匹配的信号及目标值。
+_SYSTEM_PROMPT = """你是一个汽车CAN总线信号语义匹配专家。根据中文测试用例描述，从候选信号列表中精准匹配对应的CAN信号及目标枚举值。
+
+【信号名命名规律】
+信号名采用CamelCase英文缩写，每个词块含义如下（候选列表中已提供"语义"字段辅助理解）：
+- 前缀：Cdc=座舱控制, Bcm/Bdc=车身控制, Vcu=整车控制, Dsm=驾驶座椅模块, Pdsm=副驾座椅, Rdsm=后排座椅
+- 位置：Drvr/Dr=主驾/左前, Pass/Pasgr=副驾/右前, FrLe=左前, FrRi=右前, ReLe=左后, ReRi=右后, Re=后排, Fr/Frnt=前排
+- 功能：Heat=加热, Wind/Vent=通风, Massg=按摩, Lck=锁, Door=车门, Win/Wdw=车窗, Seat=座椅
+- 类型：Set=设置指令, Sts=状态反馈, Req=请求, Fb=反馈, Ctrl=控制
+
+【语义映射规则】
+- 主驾=驾驶员=左前 → Drvr/Dr/Le/FrLe
+- 副驾=乘客=右前 → Pass/Pasgr/Ri/FrRi
+- 后排左=左后 → ReLe/Lr; 后排右=右后 → ReRi/Rr
+- 左侧=左前+左后, 右侧=右前+右后, 前排=左前+右前, 后排=左后+右后, 整车=全部四个位置
+- 打开/开启/激活 → 枚举中On/Active/Enable/1等有效值
+- 关闭/断开/去激活 → 枚举中Off/Inactive/Disable/0等关闭值
+- N档=LevelN（1档=Level1, 2档=Level2, 3档=Level3）
+- 最大/最高/最强 → 枚举中最高有效档位; 最小/最低 → 最低有效档位（排除NoReq/Reserved）
+- 未打开=关闭, 未关闭=打开, 不是开启状态=关闭
+- Set信号=主动设置指令, Sts信号=状态反馈（优先匹配Set类信号）
 
 【严格规则】
-1. 只能从候选信号中查找匹配项，禁止虚构信号名、报文ID、信号值或信号描述。
-2. 一条用例可对应多个信号（范围描述、全量描述等）。
-3. 没有足够证据必须输出 matched=false，不允许猜测。
-4. 枚举明确必须返回正确枚举键（数字字符串）。
-5. 输出必须是严格 JSON，不含解释文字或代码块包裹。
-
-【语义理解规则】
-- 主驾=左前，副驾=右前
-- 左侧=左前+左后，右侧=右前+右后
-- 前排=左前+右前，后排=左后+右后
-- 全部/所有/整车=四个位置
-- 未打开=关闭，未关闭=打开，不是开启状态=关闭
-- 2档=Level2，高档=High，中档=Medium，低档=Low
-- 最大/最高/最强=枚举最高等级；最小/最低=最低有效档位
+1. 只能从候选信号中选择匹配项，严禁虚构不存在的信号名、报文ID或枚举值。
+2. 一条用例可匹配多个信号（如"全部座椅加热"需匹配4个位置各自的信号）。
+3. 枚举值必须返回枚举表中的键（数字字符串），不能返回枚举的描述文字。
+4. 无充分证据时输出 matched=false，不允许猜测。
+5. 输出必须是纯JSON，不含任何解释文字或代码块标记。
 
 【输出格式】
 {"case_id":"<ID>","case_step":"<步骤>","matched":true/false,"case_info":[{"signal_name":"<信号名>","msg_id":"<报文ID十六进制>","signal_desc":"<描述>","signal_val":"<枚举键>","info_str":"【<ID>, <信号名>, <值>】","match_reason":"<原因>"}],"unmatched_reason":null}
 
-【示例】
-用例：打开主驾座椅加热 → 候选DrHeatSts(主驾加热) 0x22A {0:OFF,1:ON}
-输出：{"case_id":"tc_001","case_step":"打开主驾座椅加热","matched":true,"case_info":[{"signal_name":"DrHeatSts","msg_id":"0x22a","signal_desc":"主驾加热状态","signal_val":"1","info_str":"【0x22A, DrHeatSts, 1】","match_reason":"主驾=左前，加热开启=ON=1"}],"unmatched_reason":null}
+【示例1】用例：主驾座椅加热3档
+候选：CdcDrvrSeatHeatSet(语义:主驾/座椅/加热/设置) 0x2D2 {0:No Req,1:Level1,2:Level2,3:Level3,6:Off}
+输出：{"case_id":"tc_001","case_step":"主驾座椅加热3档","matched":true,"case_info":[{"signal_name":"CdcDrvrSeatHeatSet","msg_id":"0x2d2","signal_desc":"主驾座椅加热设置","signal_val":"3","info_str":"【0x2D2, CdcDrvrSeatHeatSet, 3】","match_reason":"Drvr=主驾，Heat=加热，3档=Level3，枚举键3"}],"unmatched_reason":null}
 
-用例：关闭方向盘加热 → 候选无相关信号
-输出：{"case_id":"tc_002","case_step":"关闭方向盘加热","matched":false,"case_info":[],"unmatched_reason":"候选信号中未找到方向盘加热相关信号"}"""
+【示例2】用例：关闭全部座椅加热
+候选：CdcDrvrSeatHeatSet(主驾加热设置)/CdcPassSeatHeatSet(副驾加热设置)/CdcReLeseatHeatSet(后左加热设置)/CdcReRiseatHeatSet(后右加热设置) 枚举{6:Off}
+输出：{"case_id":"tc_002","case_step":"关闭全部座椅加热","matched":true,"case_info":[{"signal_name":"CdcDrvrSeatHeatSet","msg_id":"0x2d2","signal_desc":"主驾座椅加热设置","signal_val":"6","info_str":"【0x2D2, CdcDrvrSeatHeatSet, 6】","match_reason":"全部=四个位置，关闭=Off=枚举键6"},{"signal_name":"CdcPassSeatHeatSet","msg_id":"0x2d2","signal_desc":"副驾座椅加热设置","signal_val":"6","info_str":"【0x2D2, CdcPassSeatHeatSet, 6】","match_reason":"全部=四个位置，关闭=Off=枚举键6"}],"unmatched_reason":null}"""
+
+def _fmt_cand_line(i: int, c: Dict) -> str:
+    """格式化候选信号行，关键：用语义标签代替乱码的signal_desc"""
+    name = c.get("signal_name", "")
+    tags = _signal_semantic_tags(name)
+    semantic = "/".join(tags[:6]) if tags else "—"
+    vals = c.get("values", {})
+    # 过滤掉 Reserved/NotUsed 等无意义枚举项，保留有信息量的
+    useful_vals = {k: v for k, v in vals.items()
+                   if v and not v.lower().startswith(("reserved", "notused", "not used", "not_used"))}
+    vals_str = json.dumps(useful_vals, ensure_ascii=False) if useful_vals else (
+        json.dumps(vals, ensure_ascii=False) if vals else "无枚举")
+    msg_id = c.get("msg_id_hex") or c.get("msg_id", "—")
+    return f"{i}. {name}(语义:{semantic}) | 报文ID:{msg_id} | 枚举:{vals_str}"
 
 def build_prompts(case_id: str, case_step: str, sem: Dict, cands: List[Dict]) -> Dict:
-    cand_lines = []
-    for i, c in enumerate(cands, 1):
-        vals = json.dumps(c.get("values",{}), ensure_ascii=False) if c.get("values") else "无枚举"
-        cand_lines.append(f"{i}. 信号名:{c['signal_name']} | 描述:{c.get('signal_desc','—')} | 报文ID:{c.get('msg_id_hex') or c.get('msg_id','—')} | 枚举:{vals}")
-    
+    cand_lines = [_fmt_cand_line(i, c) for i, c in enumerate(cands, 1)]
+
     sem_notes = []
     if sem.get("negative_patterns"): sem_notes.append(f"否定式转换：{sem['negative_patterns']}")
     if sem.get("positions"): sem_notes.append(f"位置展开：{sem['positions']}")
     if sem.get("enum_value_semantics"): sem_notes.append(f"枚举语义：{sem['enum_value_semantics']}")
+    expanded = sem.get("expanded_steps", [case_step])
 
     user_prompt = f"""【当前用例】
 用例ID：{case_id}
@@ -565,17 +865,16 @@ def build_prompts(case_id: str, case_step: str, sem: Dict, cands: List[Dict]) ->
 【语义说明】
 {chr(10).join(f'  - {n}' for n in sem_notes) or '  - 无特殊转换'}
 
-【展开子步骤】
-{chr(10).join(f'  - {s}' for s in sem.get('expanded_steps',[case_step]))}
+【展开子步骤】（位置/否定展开后的等价描述）
+{chr(10).join(f'  - {s}' for s in expanded)}
 
-【候选信号列表】
+【候选信号列表】（共{len(cands)}条，信号名括号内为语义解析）
 {chr(10).join(cand_lines) if cand_lines else '  （无候选信号，请输出 matched=false）'}
 
-请严格按系统提示中的 JSON 格式输出，case_id 固定为 "{case_id}"。"""
+请根据用例语义，从候选信号中精准匹配，严格按JSON格式输出，case_id固定为"{case_id}"。"""
 
-    import hashlib
     ph = hashlib.md5((_SYSTEM_PROMPT + user_prompt).encode()).hexdigest()
-    return {"system_prompt": _SYSTEM_PROMPT, "user_prompt": user_prompt, "prompt_hash": ph, "version": "v1.0"}
+    return {"system_prompt": _SYSTEM_PROMPT, "user_prompt": user_prompt, "prompt_hash": ph, "version": "v2.0"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LLM Client
